@@ -6,7 +6,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <signal.h>
-#include <pthreads.h>
+#include <pthread.h>
 
 int listener_d;
 void handle_shutdown(int sig){
@@ -82,6 +82,24 @@ action.sa_flags = 0;
 return sigaction (sig, &action, NULL);
 }
 
+struct read_message_args{
+  char buf[255];
+  int connect_d;
+};
+
+
+void *read_msg(void *arguments){
+  struct read_message_args *args = arguments;
+    // printf("%d\n", args -> connect_d);
+    // printf("%d\n", args -> arg2);
+  while(1){
+    read_in(args -> connect_d, args -> buf, sizeof(args -> buf));
+    puts(args -> buf);
+  }
+
+}
+
+
 int main(int argc, char *argv[]){
   if(catch_signal(SIGINT, handle_shutdown) == -1)
     error("Can't set interrupt handler");
@@ -95,23 +113,28 @@ int main(int argc, char *argv[]){
   struct sockaddr_storage client_addr;
   unsigned int address_size = sizeof(client_addr);
   puts("Waiting for connection...");
-  char buf[255];
   char msg[1000];
+
 
   while(1){
     int connect_d = accept(listener_d, (struct sockaddr *)&client_addr, &address_size);
     if (connect_d == -1)
       error("Cannot Open Secondary Socket");
+
     if (say(connect_d, "Connected\n") != -1){
-      pthread_t thread_id;
-      pthread_create(&thread_id, NULL, read_in(connect_d, buf, sizeof(buf)), NULL);
+        // create thread
+      pthread_t thread1;
+      struct read_message_args args;
+      args.connect_d = connect_d;
+      pthread_create(&thread1, NULL, &read_msg, (void *)&args);
+
+
       while(1){
-        puts(buf);
         fgets(msg,sizeof(msg),stdin);
         say(connect_d, msg);
       }
 
-
+      pthread_join(thread1, NULL);
 
 
     }
