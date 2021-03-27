@@ -90,8 +90,7 @@ struct read_message_args{
 
 void *read_msg(void *arguments){
   struct read_message_args *args = arguments;
-    // printf("%d\n", args -> connect_d);
-    // printf("%d\n", args -> arg2);
+
   while(1){
     read_in(args -> connect_d, args -> buf, sizeof(args -> buf));
     puts(args -> buf);
