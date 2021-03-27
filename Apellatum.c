@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <signal.h>
+#include <pthreads.h>
 
 int listener_d;
 void handle_shutdown(int sig){
@@ -95,26 +96,23 @@ int main(int argc, char *argv[]){
   unsigned int address_size = sizeof(client_addr);
   puts("Waiting for connection...");
   char buf[255];
+  char msg[1000];
 
   while(1){
     int connect_d = accept(listener_d, (struct sockaddr *)&client_addr, &address_size);
     if (connect_d == -1)
       error("Cannot Open Secondary Socket");
     if (say(connect_d, "Connected\n") != -1){
-      read_in(connect_d, buf, sizeof(buf));
-      if (strncasecmp("Who's There?", buf, 12))
-        say(connect_d, "You should say 'Who's There?'\n");
-      else{
-          if(say(connect_d, "Oscar \r\n")!=-1){
-            read_in(connect_d, buf, sizeof(buf));
-            if (strncasecmp("Oscar Who?", buf, 10))
-              say(connect_d, "You should say 'Oscar Who?'\n");
-            else
-              say(connect_d, "Heh\n");
-
-          }
-
+      pthread_t thread_id;
+      pthread_create(&thread_id, NULL, read_in(connect_d, buf, sizeof(buf)), NULL);
+      while(1){
+        puts(buf);
+        fgets(msg,sizeof(msg),stdin);
+        say(connect_d, msg);
       }
+
+
+
 
     }
     close(connect_d);
