@@ -95,8 +95,8 @@ void *read_msg(void *arguments){
     read_in(args -> connect_d, args -> buf, sizeof(args -> buf));
     puts(args -> buf);
   }
-
 }
+
 
 
 int main(int argc, char *argv[]){
