@@ -341,16 +341,6 @@ void *client_handle(void *arg){
 }
 
    send_message_all(buff_out);
-
-   pthread_mutex_lock(&topic_mutex);
-   if (strlen(topic)) {
-       buff_out[0] = '\0';
-       sprintf(buff_out, "<< topic: %s\r\n", topic);
-       send_message_self(buff_out, cli->connfd);
-   }
-   pthread_mutex_unlock(&topic_mutex);
-
-
    while ((rlen = read(cli->connfd, buff_in, sizeof(buff_in) - 1)) > 0) {
         buff_in[rlen] = '\0';
         buff_out[0] = '\0';
@@ -382,11 +372,7 @@ void *client_handle(void *arg){
         else {
             /* Send message */
 
-
-
-
-
-            snprintf(buff_out, sizeof(buff_out), "[%s] %s\r\n", cli->name, buff_in);
+            snprintf(buff_out, sizeof(buff_out), "\n[%s] %s\r\n", cli->name, buff_in);
             send_message(buff_out, cli->uid);
         }
       }
