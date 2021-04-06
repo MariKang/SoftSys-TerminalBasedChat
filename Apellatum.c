@@ -11,6 +11,69 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 
+
+#define MAX_CLIENTS 100
+#define BUFFER_SZ 2048
+
+static _Atomic unsigned int cli_count = 0;
+static int uid = 10;
+
+/* Client structure */
+typedef struct {
+    struct sockaddr_in addr; /* Client remote address */
+    int connfd;              /* Connection file descriptor */
+    int uid;                 /* Client unique identifier */
+    char name[32];           /* Client name */
+} client_t;
+client_t *clients[MAX_CLIENTS];
+
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static char topic[BUFFER_SZ/2];
+
+pthread_mutex_t topic_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+char *_strdup(const char *s) {
+    size_t size = strlen(s) + 1;
+    char *p = malloc(size);
+    if (p) {
+        memcpy(p, s, size);
+    }
+    return p;
+}
+
+void queue_add(client_t *cl){
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < MAX_CLIENTS; ++i) {
+        if (!clients[i]) {
+            clients[i] = cl;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+/* Send message to all clients */
+void send_message_all(char *s){
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i <MAX_CLIENTS; ++i){
+        if (clients[i]) {
+            if (write(clients[i]->connfd, s, strlen(s)) < 0) {
+                perror("Write to descriptor failed");
+                break;
+            }
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+void send_message_self(const char *s, int connfd){
+    if (write(connfd, s, strlen(s)) < 0) {
+        perror("Write to descriptor failed");
+        exit(-1);
+    }
+}
+
 int listener_d;
 void handle_shutdown(int sig){
 	if (listener_d)
@@ -23,6 +86,30 @@ void handle_shutdown(int sig){
 void error(char *msg){
 	fprintf(stderr, "%s: %s\n", msg, strerror(errno));
 	exit(1);
+}
+
+void send_message(char *s, int uid){
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < MAX_CLIENTS; ++i) {
+        if (clients[i]) {
+            if (clients[i]->uid != uid) {
+                if (write(clients[i]->connfd, s, strlen(s)) < 0) {
+                    perror("Write to descriptor failed");
+                    break;
+                }
+            }
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+void strip_newline(char *s){
+    while (*s != '\0') {
+        if (*s == '\r' || *s == '\n') {
+            *s = '\0';
+        }
+        s++;
+    }
 }
 
 void bind_to_port(int socket, int port){
@@ -124,10 +211,50 @@ void checkIPbuffer(char *IPbuffer)
     }
 }
 
+void *client_handle(void *arg){
+  char buff_out[BUFFER_SZ];
+   char buff_in[BUFFER_SZ / 2];
+   int rlen;
 
+   cli_count++;
+   client_t *cli = (client_t *)arg;
+
+
+   sprintf(buff_out, "<< %s has joined\r\n", cli->name);
+   send_message_all(buff_out);
+
+   pthread_mutex_lock(&topic_mutex);
+   if (strlen(topic)) {
+       buff_out[0] = '\0';
+       sprintf(buff_out, "<< topic: %s\r\n", topic);
+       send_message_self(buff_out, cli->connfd);
+   }
+   pthread_mutex_unlock(&topic_mutex);
+
+   send_message_self("<< see /help for assistance\r\n", cli->connfd);
+
+   while ((rlen = read(cli->connfd, buff_in, sizeof(buff_in) - 1)) > 0) {
+        buff_in[rlen] = '\0';
+        buff_out[0] = '\0';
+        strip_newline(buff_in);
+
+        /* Ignore empty buffer */
+        if (!strlen(buff_in)) {
+            continue;
+        }
+        else {
+            /* Send message */
+            snprintf(buff_out, sizeof(buff_out), "[%s] %s\r\n", cli->name, buff_in);
+            send_message(buff_out, cli->uid);
+        }
+      }
+}
 
 int main(int argc, char *argv[]){
+  int connfd = 0;
+  struct sockaddr_in cli_addr;
 
+  pthread_t tid;
 	if(catch_signal(SIGINT, handle_shutdown) == -1)
 		error("Can't set interrupt handler");
 
@@ -137,8 +264,8 @@ int main(int argc, char *argv[]){
 	if(listen(listener_d, 10) == -1)
 		error("Can't Listen");
 
-	struct sockaddr_storage client_addr;
-	unsigned int address_size = sizeof(client_addr);
+	// struct sockaddr_storage client_addr;
+	unsigned int address_size = sizeof(cli_addr);
 
 	puts("Welcome to the Apellatum Messenger.\n");
   char hostbuffer[256];
@@ -165,26 +292,20 @@ int main(int argc, char *argv[]){
 	char msg[1000];
 
 	while(1){
-	int connect_d = accept(listener_d, (struct sockaddr *)&client_addr, &address_size);
-	if (connect_d == -1)
+    connfd = accept(listener_d, (struct sockaddr*)&cli_addr, &address_size);
+	if (connfd == -1)
 		error("Cannot Open Secondary Socket");
 
-	if (say(connect_d, "Connected\n") != -1){
-		// create thread
+    client_t *cli = (client_t *)malloc(sizeof(client_t));
+          cli->addr = cli_addr;
+          cli->connfd = connfd;
+          cli->uid = uid++;
+          sprintf(cli->name, "%d", cli->uid);
 
-		pthread_t thread1;
-		struct read_message_args args;
-		args.connect_d = connect_d;
-		pthread_create(&thread1, NULL, &read_msg, (void *)&args);
+          /* Add client to the queue and fork thread */
+          queue_add(cli);
+          pthread_create(&tid, NULL, &client_handle, (void*)cli);
 
-		while(1){
-			fgets(msg,sizeof(msg),stdin);
-			say(connect_d, msg);
-		}
-
-		pthread_join(thread1, NULL);
-	}
-	close(connect_d);
-	}
-	return 0;
+        }
+        return 0;
 }
