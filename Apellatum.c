@@ -15,7 +15,7 @@ int listener_d;
 void handle_shutdown(int sig){
 	if (listener_d)
 		close(listener_d);
-	
+
 	fprintf(stderr, "Bye!\n");
 	exit(0);
 }
@@ -97,8 +97,7 @@ void *read_msg(void *arguments){
 
 
 int main(int argc, char *argv[]){
-	char hostbuffer[256];
-	char *IPbuffer;
+
 	int src_hst;
 	if(catch_signal(SIGINT, handle_shutdown) == -1)
 		error("Can't set interrupt handler");
