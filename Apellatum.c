@@ -220,7 +220,31 @@ void *client_handle(void *arg){
    client_t *cli = (client_t *)arg;
 
 
-   sprintf(buff_out, "<< %s has joined\r\n", cli->name);
+
+
+  char nick[60];
+  send_message_self("Set your username\r\n", cli->connfd);
+
+  while ((rlen = read(cli->connfd, buff_in, sizeof(buff_in) - 1)) > 0) {
+    buff_in[rlen] = '\0';
+        buff_out[0] = '\0';
+        strip_newline(buff_in);
+
+        /* Ignore empty buffer */
+        if (!strlen(buff_in)) {
+            continue;
+        }
+
+
+    char *old_name = _strdup(cli->name);
+    strncpy(cli->name, buff_in, sizeof(cli->name));
+    cli->name[sizeof(cli->name)-1] = '\0';
+    sprintf(buff_out, "%s is now known as %s\r\n", old_name, cli->name);
+    free(old_name);
+
+  break;
+}
+
    send_message_all(buff_out);
 
    pthread_mutex_lock(&topic_mutex);
@@ -231,7 +255,6 @@ void *client_handle(void *arg){
    }
    pthread_mutex_unlock(&topic_mutex);
 
-   send_message_self("<< see /help for assistance\r\n", cli->connfd);
 
    while ((rlen = read(cli->connfd, buff_in, sizeof(buff_in) - 1)) > 0) {
         buff_in[rlen] = '\0';
