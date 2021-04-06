@@ -83,6 +83,94 @@ void handle_shutdown(int sig){
 	exit(0);
 }
 
+
+// Function to replace a string with another
+// string
+char* replaceWord(const char* s, const char* oldW,
+				const char* newW)
+{
+	char* result;
+
+	int i, cnt = 0;
+	int newWlen = strlen(newW);
+	int oldWlen = strlen(oldW);
+
+	// Counting the number of times old word
+	// occur in the string
+	for (i = 0; s[i] != '\0'; i++) {
+		if (strstr(&s[i], oldW) == &s[i]) {
+			cnt++;
+
+			// Jumping to index after the old word.
+			i += oldWlen - 1;
+		}
+	}
+
+	// Making new string of enough length
+	result = (char*)malloc(i + cnt * (newWlen - oldWlen) + 1);
+	i = 0;
+
+	while (*s) {
+		// compare the substring with the result
+		if (strstr(s, oldW) == s) {
+			strcpy(&result[i], newW);
+			i += newWlen;
+			s += oldWlen;
+		}
+		else
+			result[i++] = *s++;
+	}
+
+	result[i] = '\0';
+	return result;
+}
+
+char* get_emoji(char *flag){
+	char *emoji;
+    // printf("FLAG: %s\n", flag);
+    if(strstr(flag, "BEAR") != NULL){
+		emoji = "ʕ•́ᴥ•̀ʔっ";
+        // printf("ʕ•́ᴥ•̀ʔっ\n");
+    }
+    else if(strstr(flag, "WHAT") != NULL){
+		emoji = "(ㆆ_ㆆ)";
+        // printf("(ㆆ_ㆆ)\n");
+    }
+	else if(strstr(flag, "HUH") != NULL){
+		emoji = "(͡° ͜ʖ ͡°)";
+     	// printf("(͡° ͜ʖ ͡°)\n");
+    }
+	else{
+		emoji = "";
+	}
+
+	return emoji;
+}
+
+void get_tokens(char *s, char *str_tokens[])
+{
+    int token_i = 0;
+    // return tokens and later we loop through all the tokens, and if it is a valid emoji, we replace it
+    char *start = s;
+    char *end = s;
+    while(*s) {
+        if(*s == '[') start = s;
+        else if(*s == ']') end = s;
+        if(start < end && *start) {
+              *end = 0;
+              str_tokens[token_i] = start+1;
+              start = s = end;
+              token_i++;
+        }
+        s++;
+    }
+    str_tokens[token_i] = "";       // end empty string
+    // for (int i = 0; str_tokens[i][0] != '\0'; i++ ) {
+    //     printf("%s\n", str_tokens[i]);
+    // }
+
+}
+
 void error(char *msg){
 	fprintf(stderr, "%s: %s\n", msg, strerror(errno));
 	exit(1);
@@ -215,10 +303,17 @@ void *client_handle(void *arg){
   char buff_out[BUFFER_SZ];
    char buff_in[BUFFER_SZ / 2];
    int rlen;
-
+   const char *res = NULL;
+   char *str_tokens[100];
    cli_count++;
    client_t *cli = (client_t *)arg;
+   char c[100] = "[BEAR]";
+   char d[100] = "ʕ•́ᴥ•̀ʔっ";
+   char* result = NULL;
 
+
+   char msg_copy[1000];		// create copy bc strtok modifies orig str
+  		//modifies str_tokens
 
 
 
@@ -260,6 +355,25 @@ void *client_handle(void *arg){
         buff_in[rlen] = '\0';
         buff_out[0] = '\0';
         strip_newline(buff_in);
+        strcpy(msg_copy, buff_in);
+        get_tokens(msg_copy, str_tokens);
+        for (int i = 0; str_tokens[i][0] != '\0'; i++ ) {
+
+        //update emoji_text
+        strcpy(c, "[");
+        strcat(c, str_tokens[i]);
+        strcat(c, "]");
+        // printf("c: %s\n", c);
+
+        // update emoji
+        strcpy(d, get_emoji(str_tokens[i]));
+        // printf("d: %s\n", d);
+
+        // replace emoji text with emoji
+        strcpy(buff_in, replaceWord(buff_in, c, d));
+
+        }
+        free(result);
 
         /* Ignore empty buffer */
         if (!strlen(buff_in)) {
@@ -267,6 +381,11 @@ void *client_handle(void *arg){
         }
         else {
             /* Send message */
+
+
+
+
+
             snprintf(buff_out, sizeof(buff_out), "[%s] %s\r\n", cli->name, buff_in);
             send_message(buff_out, cli->uid);
         }
