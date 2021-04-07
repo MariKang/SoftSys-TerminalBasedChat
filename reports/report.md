@@ -33,22 +33,21 @@ typedef struct {
 
 We need to first create threads to each individual client that accesses the program using telnet. In the while loop that constantly runs, we accept any incoming connections and create a connect_f variable. When a user connects, we create new values for their user id and its corresponding thread by the add_user function which allows it to run on a separate thread, allowing multiple users to send and recieve messages simultaneously. 
 ```
-	while(1){
-        connect_f = accept(listener_d, (struct sockaddr*)&cli_addr, &address_size);
-        if (connect_f == -1)
-            error("Cannot Open Secondary Socket");
+while(1){
+    connect_f = accept(listener_d, (struct sockaddr*)&cli_addr, &address_size);
+    if (connect_f == -1)
+    	error("Cannot Open Secondary Socket");
+    client *cli = (client *)malloc(sizeof(client));
+    cli->addr = cli_addr;
+    cli->connect_f = connect_f;
+    cli->user_id = user_id++;
+    sprintf(cli->name, "%d", cli->user_id);
+    
+    /* Add client to the queue*/
+    add_user(cli);
+    pthread_create(&tid, NULL, &client_handle, (void*)cli);
 
-        client *cli = (client *)malloc(sizeof(client));
-        cli->addr = cli_addr;
-        cli->connect_f = connect_f;
-        cli->user_id = user_id++;
-        sprintf(cli->name, "%d", cli->user_id);
-
-        /* Add client to the queue*/
-        add_user(cli);
-        pthread_create(&tid, NULL, &client_handle, (void*)cli);
-
-    }
+}
 ```
 
 There are two main parts in the chat implementation of this program. Because we have divided the clients to different threads and they run in different processes, it is important to invoke a send message to the clients when one client sends a message. The function we use to achieve this is shown below in the send_message function. 
