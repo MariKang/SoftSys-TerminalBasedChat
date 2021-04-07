@@ -37,4 +37,4 @@ Clients can send their messages to all the other clients. The client's own usern
 ![image 2](reports/images/multiuser_chat.png)
 
 Emojis are sent using brackets([]). There are three types of Emoji, [BEAR], [WHAT] and [HUH], each replaced with different emoji.
-![image 3](images/receiving_emoji.png)
+![image 3](reports/images/receiving_emoji.png)
