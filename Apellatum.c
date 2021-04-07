@@ -440,21 +440,6 @@ int main(int argc, char *argv[]){
     printf("Host IP: %s \n", IPbuffer);
 
 	puts("Waiting for connection...");
-	while(1){
-        connect_f = accept(listener_d, (struct sockaddr*)&cli_addr, &address_size);
-        if (connect_f == -1)
-            error("Cannot Open Secondary Socket");
-
-        client *cli = (client *)malloc(sizeof(client));
-        cli->addr = cli_addr;
-        cli->connect_f = connect_f;
-        cli->user_id = user_id++;
-        sprintf(cli->name, "%d", cli->user_id);
-
-        /* Add client to the queue*/
-        add_user(cli);
-        pthread_create(&tid, NULL, &client_handle, (void*)cli);
-
-    }
+\
     return 0;
 }
