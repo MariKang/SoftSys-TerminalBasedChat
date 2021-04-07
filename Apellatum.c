@@ -37,6 +37,7 @@ char *_strdup(const char *s) {
     return p;
 }
 
+/*creates a new client*/
 void add_user(client_t *cl){
     pthread_mutex_lock(&clients_mutex);
     for (int i = 0; i < MAX_CLIENTS; ++i) {
@@ -62,6 +63,7 @@ void broadcast_all(char *s){
     pthread_mutex_unlock(&clients_mutex);
 }
 
+/* Send message to self */
 void broadcast_self(const char *s, int connect_f){
     if (write(connect_f, s, strlen(s)) < 0) {
         perror("Write to descriptor failed");
@@ -70,6 +72,14 @@ void broadcast_self(const char *s, int connect_f){
 }
 
 int listener_d;
+
+/*
+Shuts down the program.
+
+Args:
+
+int sig: signal of socket
+*/
 void handle_shutdown(int sig){
 	if (listener_d)
 		close(listener_d);
@@ -79,8 +89,18 @@ void handle_shutdown(int sig){
 }
 
 
-// Function to replace a string with another
-// string
+/*
+Function to replace a string with another string
+
+Args:
+
+char s: string to replace
+char oldW: words that will be replaced
+char newW: word to replace
+
+Returns:
+result: editted string
+*/
 char* replaceWord(const char* s, const char* oldW,
 				const char* newW)
 {
@@ -216,22 +236,6 @@ int open_listener_socket(){
 	return s;
 	}
 
-int read_in(int socket, char *buf, int len){
-	char *s = buf;
-	int slen = len;
-	int c = recv(socket, s, slen, 0);
-	while ((c > 0) && (s[c-1] != '\n')) {
-		s += c; slen -= c;
-		c = recv(socket, s, slen, 0);
-	}
-	if (c < 0)
-		return c;
-	else if (c == 0)
-		buf[0] = '\0';
-	else
-		s[c-1]='\0';
-	return len - slen;
-}
 
 int catch_signal(int sig, void (*handler)(int)){
 	struct sigaction action;
@@ -242,7 +246,13 @@ int catch_signal(int sig, void (*handler)(int)){
 }
 
 
-// Returns hostname for the local computer
+/*
+Returns hostname for the local computer
+
+Args:
+
+int hostname: the name of the host
+*/
 void checkHostName(int hostname)
 {
     if (hostname == -1)
@@ -252,7 +262,13 @@ void checkHostName(int hostname)
     }
 }
 
-// Returns host information corresponding to host name
+/*
+Returns host information corresponding to host name
+
+Args:
+
+struct hostentry: host name acceptance
+*/
 void checkHostEntry(struct hostent * hostentry)
 {
     if (hostentry == NULL)
@@ -262,8 +278,13 @@ void checkHostEntry(struct hostent * hostentry)
     }
 }
 
-// Converts space-delimited IPv4 addresses
-// to dotted-decimal format
+/*
+Converts space-delimited IPv4 addresses to dotted-decimal format
+
+Args:
+
+char IPbuffer: space delimited IPv4 address
+*/
 void checkIPbuffer(char *IPbuffer)
 {
     if (NULL == IPbuffer)
@@ -273,6 +294,18 @@ void checkIPbuffer(char *IPbuffer)
     }
 }
 
+/*
+Handles the client's messages and username settings. Uses the buffers read by the read function to accept a username from
+prompt and resets the user_id value.
+
+Reads the messages and converts given commands into emojis determined by the function replaceWord.
+Outputs the rewritten message and outputs it to the users
+
+Args:
+
+void arg: client variable to intitalize the client thread
+
+*/
 void *client_handle(void *arg){
   char output[BUFFER_SZ];
    char input[BUFFER_SZ / 2];
@@ -352,6 +385,18 @@ void *client_handle(void *arg){
       }
 }
 
+/*
+Catches the signal in the sockets using the listener, Identifies the IP address of the host computer and shows the introduction
+with the IP address. Initializes the client.
+
+Args:
+
+int argc: the number of strings pointed to by argv
+char *argv[]: input of the command
+
+Return:
+0
+*/
 int main(int argc, char *argv[]){
   int connect_f = 0;
   struct sockaddr_in cli_addr;
