@@ -16,23 +16,18 @@
 #define BUFFER_SZ 2048
 
 static _Atomic unsigned int cli_count = 0;
-static int uid = 10;
+static int user_id = 10;
 
 /* Client structure */
 typedef struct {
     struct sockaddr_in addr; /* Client remote address */
-    int connfd;              /* Connection file descriptor */
-    int uid;                 /* Client unique identifier */
+    int connect_f;              /* Connection file descriptor */
+    int user_id;                 /* Client unique identifier */
     char name[32];           /* Client name */
 } client_t;
 client_t *clients[MAX_CLIENTS];
 
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-static char topic[BUFFER_SZ/2];
-
-pthread_mutex_t topic_mutex = PTHREAD_MUTEX_INITIALIZER;
-
 char *_strdup(const char *s) {
     size_t size = strlen(s) + 1;
     char *p = malloc(size);
@@ -42,7 +37,7 @@ char *_strdup(const char *s) {
     return p;
 }
 
-void queue_add(client_t *cl){
+void add_user(client_t *cl){
     pthread_mutex_lock(&clients_mutex);
     for (int i = 0; i < MAX_CLIENTS; ++i) {
         if (!clients[i]) {
@@ -54,11 +49,11 @@ void queue_add(client_t *cl){
 }
 
 /* Send message to all clients */
-void send_message_all(char *s){
+void broadcast_all(char *s){
     pthread_mutex_lock(&clients_mutex);
     for (int i = 0; i <MAX_CLIENTS; ++i){
         if (clients[i]) {
-            if (write(clients[i]->connfd, s, strlen(s)) < 0) {
+            if (write(clients[i]->connect_f, s, strlen(s)) < 0) {
                 perror("Write to descriptor failed");
                 break;
             }
@@ -67,8 +62,8 @@ void send_message_all(char *s){
     pthread_mutex_unlock(&clients_mutex);
 }
 
-void send_message_self(const char *s, int connfd){
-    if (write(connfd, s, strlen(s)) < 0) {
+void broadcast_self(const char *s, int connect_f){
+    if (write(connect_f, s, strlen(s)) < 0) {
         perror("Write to descriptor failed");
         exit(-1);
     }
@@ -176,12 +171,12 @@ void error(char *msg){
 	exit(1);
 }
 
-void send_message(char *s, int uid){
+void send_message(char *s, int user_id){
     pthread_mutex_lock(&clients_mutex);
     for (int i = 0; i < MAX_CLIENTS; ++i) {
         if (clients[i]) {
-            if (clients[i]->uid != uid) {
-                if (write(clients[i]->connfd, s, strlen(s)) < 0) {
+            if (clients[i]->user_id != user_id) {
+                if (write(clients[i]->connect_f, s, strlen(s)) < 0) {
                     perror("Write to descriptor failed");
                     break;
                 }
@@ -213,12 +208,6 @@ void bind_to_port(int socket, int port){
 		error("Can't bind to socket");
 }
 
-int say(int socket, char *s){
-	int result = send(socket, s, strlen(s), 0);
-	if (result == -1)
-		fprintf(stderr, "%s: %s\n", "Error talking to the client", strerror(errno));
-	return result;
-}
 
 int open_listener_socket(){
 	int s = socket(PF_INET, SOCK_STREAM, 0);
@@ -226,8 +215,6 @@ int open_listener_socket(){
 		error("Can't open socket");
 	return s;
 	}
-
-
 
 int read_in(int socket, char *buf, int len){
 	char *s = buf;
@@ -254,20 +241,7 @@ int catch_signal(int sig, void (*handler)(int)){
 	return sigaction (sig, &action, NULL);
 }
 
-struct read_message_args{
-	char buf[255];
-	int connect_d;
-};
 
-
-void *read_msg(void *arguments){
-	struct read_message_args *args = arguments;
-
-	while(1){
-		read_in(args -> connect_d, args -> buf, sizeof(args -> buf));
-		puts(args -> buf);
-	}
-}
 // Returns hostname for the local computer
 void checkHostName(int hostname)
 {
@@ -300,8 +274,8 @@ void checkIPbuffer(char *IPbuffer)
 }
 
 void *client_handle(void *arg){
-  char buff_out[BUFFER_SZ];
-   char buff_in[BUFFER_SZ / 2];
+  char output[BUFFER_SZ];
+   char input[BUFFER_SZ / 2];
    int rlen;
    const char *res = NULL;
    char *str_tokens[100];
@@ -318,34 +292,34 @@ void *client_handle(void *arg){
 
 
   char nick[60];
-  send_message_self("Set your username\r\n", cli->connfd);
+  broadcast_self("Set your username\r\n", cli->connect_f);
 
-  while ((rlen = read(cli->connfd, buff_in, sizeof(buff_in) - 1)) > 0) {
-    buff_in[rlen] = '\0';
-        buff_out[0] = '\0';
-        strip_newline(buff_in);
+  while ((rlen = read(cli->connect_f, input, sizeof(input) - 1)) > 0) {
+    input[rlen] = '\0';
+        output[0] = '\0';
+        strip_newline(input);
 
         /* Ignore empty buffer */
-        if (!strlen(buff_in)) {
+        if (!strlen(input)) {
             continue;
         }
 
 
     char *old_name = _strdup(cli->name);
-    strncpy(cli->name, buff_in, sizeof(cli->name));
+    strncpy(cli->name, input, sizeof(cli->name));
     cli->name[sizeof(cli->name)-1] = '\0';
-    sprintf(buff_out, "%s is now known as %s\r\n", old_name, cli->name);
+    sprintf(output, "%s is now known as %s\r\n", old_name, cli->name);
     free(old_name);
 
   break;
 }
 
-   send_message_all(buff_out);
-   while ((rlen = read(cli->connfd, buff_in, sizeof(buff_in) - 1)) > 0) {
-        buff_in[rlen] = '\0';
-        buff_out[0] = '\0';
-        strip_newline(buff_in);
-        strcpy(msg_copy, buff_in);
+   broadcast_all(output);
+   while ((rlen = read(cli->connect_f, input, sizeof(input) - 1)) > 0) {
+        input[rlen] = '\0';
+        output[0] = '\0';
+        strip_newline(input);
+        strcpy(msg_copy, input);
         get_tokens(msg_copy, str_tokens);
         for (int i = 0; str_tokens[i][0] != '\0'; i++ ) {
 
@@ -360,26 +334,26 @@ void *client_handle(void *arg){
         // printf("d: %s\n", d);
 
         // replace emoji text with emoji
-        strcpy(buff_in, replaceWord(buff_in, c, d));
+        strcpy(input, replaceWord(input, c, d));
 
         }
         free(result);
 
         /* Ignore empty buffer */
-        if (!strlen(buff_in)) {
+        if (!strlen(input)) {
             continue;
         }
         else {
             /* Send message */
 
-            snprintf(buff_out, sizeof(buff_out), "\n[%s] %s\r\n", cli->name, buff_in);
-            send_message(buff_out, cli->uid);
+            snprintf(output, sizeof(output), "\n[%s] %s\r\n", cli->name, input);
+            send_message(output, cli->user_id);
         }
       }
 }
 
 int main(int argc, char *argv[]){
-  int connfd = 0;
+  int connect_f = 0;
   struct sockaddr_in cli_addr;
 
   pthread_t tid;
@@ -420,18 +394,18 @@ int main(int argc, char *argv[]){
 	char msg[1000];
 
 	while(1){
-    connfd = accept(listener_d, (struct sockaddr*)&cli_addr, &address_size);
-	if (connfd == -1)
+    connect_f = accept(listener_d, (struct sockaddr*)&cli_addr, &address_size);
+	if (connect_f == -1)
 		error("Cannot Open Secondary Socket");
 
     client_t *cli = (client_t *)malloc(sizeof(client_t));
           cli->addr = cli_addr;
-          cli->connfd = connfd;
-          cli->uid = uid++;
-          sprintf(cli->name, "%d", cli->uid);
+          cli->connect_f = connect_f;
+          cli->user_id = user_id++;
+          sprintf(cli->name, "%d", cli->user_id);
 
           /* Add client to the queue and fork thread */
-          queue_add(cli);
+          add_user(cli);
           pthread_create(&tid, NULL, &client_handle, (void*)cli);
 
         }
