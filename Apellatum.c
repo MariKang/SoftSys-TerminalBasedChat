@@ -85,7 +85,7 @@ void broadcast_self(const char *s, int connect_f){
 
 
 /*  Send message to everyone except for sender
-    
+
     Args:
         char *s: Message to send
         int user_id: User ID of sender
@@ -169,8 +169,8 @@ char* replaceWord(const char* s, const char* oldW,
 }
 
 
-/*  Returns text emojis that correspond to different emoji flags 
-    
+/*  Returns text emojis that correspond to different emoji flags
+
     Args:
         char *flag: emoji name in all caps
     Returns:
@@ -195,7 +195,7 @@ char* get_emoji(char *flag){
 }
 
 
-/*  Tokenize message if there are emojis (ex: [BEAR]) present. 
+/*  Tokenize message if there are emojis (ex: [BEAR]) present.
 
     Args:
         char *s: pointer to message to tokenize
@@ -203,7 +203,7 @@ char* get_emoji(char *flag){
 */
 void get_tokens(char *s, char *str_tokens[])
 {
-    int token_i = 0; 
+    int token_i = 0;
     char *start = s;
     char *end = s;
     while(*s) {
@@ -211,7 +211,7 @@ void get_tokens(char *s, char *str_tokens[])
         else if(*s == ']') end = s;
         if(start < end && *start) {
               *end = 0;
-              str_tokens[token_i] = start+1;        
+              str_tokens[token_i] = start+1;
               start = s = end;
               token_i++;
         }
@@ -237,6 +237,13 @@ void strip_newline(char *s){
     }
 }
 
+
+/*  Create a connection port with the socket and port number given to the program using PF_INET
+
+  Args:
+      int socket: the socket number
+      int port: port number to connect to the host
+*/
 void bind_to_port(int socket, int port){
 	struct sockaddr_in name;
 	name.sin_family = PF_INET;
@@ -250,7 +257,9 @@ void bind_to_port(int socket, int port){
 		error("Can't bind to socket");
 }
 
+/*  Open a connection port with the socket and port number given to the program using PF_INET
 
+*/
 int open_listener_socket(){
 	int s = socket(PF_INET, SOCK_STREAM, 0);
 	if (s == -1)
@@ -258,7 +267,14 @@ int open_listener_socket(){
 	return s;
 }
 
+/*  Scan and detect singals that connect to the port and host
 
+  Args:
+      int sig: signal number
+  Return:
+      sigaction: invoke the signal action function with the given signal value and its actions
+
+*/
 int catch_signal(int sig, void (*handler)(int)){
 	struct sigaction action;
 	action.sa_handler = handler;
@@ -311,14 +327,14 @@ void *client_handle(void *arg){
     int rlen;
     cli_count++;
     client *cli = (client *)arg;
-    
+
     /* Variables for emoji handling */
     char *str_tokens[100];
     char emoji_name[100] = "";
     char emoji[100] = "";
     char* result = NULL;
     char msg_copy[1000];		// create copy bc strtok modifies orig str modifies str_tokens
-    
+
 
     /* Prompt user for new username and updates name */
     broadcast_self("Set your username\r\n", cli->connect_f);
@@ -341,7 +357,7 @@ void *client_handle(void *arg){
         broadcast_all(output);
         break;
     }
-    
+
     /* Handles messaging (includes emojis parsing) */
     while ((rlen = read(cli->connect_f, input, sizeof(input) - 1)) > 0) {
         input[rlen] = '\0';
@@ -376,7 +392,7 @@ void *client_handle(void *arg){
     }
 }
 
-/* Catches the signal in the sockets using the listener. 
+/* Catches the signal in the sockets using the listener.
 
 Identifies the IP address of the host computer and shows the introduction
 with the IP address. Initializes the client.
