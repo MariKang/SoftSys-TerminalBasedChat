@@ -13,32 +13,33 @@
 
 
 #define MAX_CLIENTS 100
-#define BUFFER_SZ 2048
+#define MSG_BUFFER_SZ 2048
 
 static _Atomic unsigned int cli_count = 0;
 static int user_id = 10;
 
+int listener_d;
+
+
 /* Client structure */
 typedef struct {
-    struct sockaddr_in addr; /* Client remote address */
+    struct sockaddr_in addr;    /* Client remote address */
     int connect_f;              /* Connection file descriptor */
-    int user_id;                 /* Client unique identifier */
-    char name[32];           /* Client name */
-} client_t;
-client_t *clients[MAX_CLIENTS];
+    int user_id;                /* Client unique identifier */
+    char name[32];              /* Client name */
+} client;
+client *clients[MAX_CLIENTS];       /* Queue of current clients */
 
+/* Initialize mutex to protect the shared resource: client */
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
-char *_strdup(const char *s) {
-    size_t size = strlen(s) + 1;
-    char *p = malloc(size);
-    if (p) {
-        memcpy(p, s, size);
-    }
-    return p;
-}
 
-/*creates a new client*/
-void add_user(client_t *cl){
+
+/*  Creates a new client by adding it to the current client queue
+
+    Args:
+        client *cl: client struct containing the info of the new client
+*/
+void add_user(client *cl){
     pthread_mutex_lock(&clients_mutex);
     for (int i = 0; i < MAX_CLIENTS; ++i) {
         if (!clients[i]) {
@@ -49,7 +50,12 @@ void add_user(client_t *cl){
     pthread_mutex_unlock(&clients_mutex);
 }
 
-/* Send message to all clients */
+
+/*  Send message to all clients
+
+    Args:
+        const char *s: message to send
+*/
 void broadcast_all(char *s){
     pthread_mutex_lock(&clients_mutex);
     for (int i = 0; i <MAX_CLIENTS; ++i){
@@ -63,7 +69,13 @@ void broadcast_all(char *s){
     pthread_mutex_unlock(&clients_mutex);
 }
 
-/* Send message to self */
+
+/*  Sends message to self.
+
+    Args:
+        const char *s: message to send
+        int connect_f: file descriptor for socket to write to
+*/
 void broadcast_self(const char *s, int connect_f){
     if (write(connect_f, s, strlen(s)) < 0) {
         perror("Write to descriptor failed");
@@ -71,14 +83,33 @@ void broadcast_self(const char *s, int connect_f){
     }
 }
 
-int listener_d;
 
-/*
-Shuts down the program.
+/*  Send message to everyone except for sender
+    
+    Args:
+        char *s: Message to send
+        int user_id: User ID of sender
+*/
+void send_message(char *s, int user_id){
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < MAX_CLIENTS; ++i) {
+        if (clients[i]) {
+            if (clients[i]->user_id != user_id) {
+                if (write(clients[i]->connect_f, s, strlen(s)) < 0) {
+                    perror("Write to descriptor failed");
+                    break;
+                }
+            }
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+}
 
-Args:
 
-int sig: signal of socket
+/*  Shuts down the program.
+
+    Args:
+        int sig: signal of socket
 */
 void handle_shutdown(int sig){
 	if (listener_d)
@@ -89,17 +120,15 @@ void handle_shutdown(int sig){
 }
 
 
-/*
-Function to replace a string with another string
+/* Function to replace a string with another string
 
-Args:
+    Args:
+        char s: string to replace
+        char oldW: words that will be replaced
+        char newW: word to replace
 
-char s: string to replace
-char oldW: words that will be replaced
-char newW: word to replace
-
-Returns:
-result: editted string
+    Returns:
+        result: edited string
 */
 char* replaceWord(const char* s, const char* oldW,
 				const char* newW)
@@ -110,8 +139,7 @@ char* replaceWord(const char* s, const char* oldW,
 	int newWlen = strlen(newW);
 	int oldWlen = strlen(oldW);
 
-	// Counting the number of times old word
-	// occur in the string
+	// Counting the number of times old word occur in the string
 	for (i = 0; s[i] != '\0'; i++) {
 		if (strstr(&s[i], oldW) == &s[i]) {
 			cnt++;
@@ -140,20 +168,24 @@ char* replaceWord(const char* s, const char* oldW,
 	return result;
 }
 
+
+/*  Returns text emojis that correspond to different emoji flags 
+    
+    Args:
+        char *flag: emoji name in all caps
+    Returns:
+        char *emoji: text-styled emoji
+*/
 char* get_emoji(char *flag){
 	char *emoji;
-    // printf("FLAG: %s\n", flag);
     if(strstr(flag, "BEAR") != NULL){
 		emoji = "ʕ•́ᴥ•̀ʔっ";
-        // printf("ʕ•́ᴥ•̀ʔっ\n");
     }
     else if(strstr(flag, "WHAT") != NULL){
 		emoji = "(ㆆ_ㆆ)";
-        // printf("(ㆆ_ㆆ)\n");
     }
 	else if(strstr(flag, "HUH") != NULL){
 		emoji = "(͡° ͜ʖ ͡°)";
-     	// printf("(͡° ͜ʖ ͡°)\n");
     }
 	else{
 		emoji = "";
@@ -162,10 +194,16 @@ char* get_emoji(char *flag){
 	return emoji;
 }
 
+
+/*  Tokenize message if there are emojis (ex: [BEAR]) present. 
+
+    Args:
+        char *s: pointer to message to tokenize
+        char *str_tokens[]: pointer to array of tokens as output
+*/
 void get_tokens(char *s, char *str_tokens[])
 {
-    int token_i = 0;
-    // return tokens and later we loop through all the tokens, and if it is a valid emoji, we replace it
+    int token_i = 0; 
     char *start = s;
     char *end = s;
     while(*s) {
@@ -173,38 +211,22 @@ void get_tokens(char *s, char *str_tokens[])
         else if(*s == ']') end = s;
         if(start < end && *start) {
               *end = 0;
-              str_tokens[token_i] = start+1;
+              str_tokens[token_i] = start+1;        
               start = s = end;
               token_i++;
         }
         s++;
     }
-    str_tokens[token_i] = "";       // end empty string
-    // for (int i = 0; str_tokens[i][0] != '\0'; i++ ) {
-    //     printf("%s\n", str_tokens[i]);
-    // }
-
+    str_tokens[token_i] = "";       // signify end with empty string
 }
 
+
+/* Function to print errors */
 void error(char *msg){
 	fprintf(stderr, "%s: %s\n", msg, strerror(errno));
 	exit(1);
 }
 
-void send_message(char *s, int user_id){
-    pthread_mutex_lock(&clients_mutex);
-    for (int i = 0; i < MAX_CLIENTS; ++i) {
-        if (clients[i]) {
-            if (clients[i]->user_id != user_id) {
-                if (write(clients[i]->connect_f, s, strlen(s)) < 0) {
-                    perror("Write to descriptor failed");
-                    break;
-                }
-            }
-        }
-    }
-    pthread_mutex_unlock(&clients_mutex);
-}
 
 void strip_newline(char *s){
     while (*s != '\0') {
@@ -234,7 +256,7 @@ int open_listener_socket(){
 	if (s == -1)
 		error("Can't open socket");
 	return s;
-	}
+}
 
 
 int catch_signal(int sig, void (*handler)(int)){
@@ -246,89 +268,62 @@ int catch_signal(int sig, void (*handler)(int)){
 }
 
 
-/*
-Returns hostname for the local computer
+/*  Returns hostname for the local computer
 
-Args:
-
-int hostname: the name of the host
+    Args:
+        int hostname: the name of the host
 */
-void checkHostName(int hostname)
-{
-    if (hostname == -1)
-    {
+void check_host_name(int hostname){
+    if (hostname == -1){
         perror("gethostname");
         exit(1);
     }
 }
 
-/*
-Returns host information corresponding to host name
 
-Args:
+/*  Returns host information corresponding to host name
 
-struct hostentry: host name acceptance
+    Args:
+        struct hostentry: host name acceptance
 */
-void checkHostEntry(struct hostent * hostentry)
-{
-    if (hostentry == NULL)
-    {
+void check_host_entry(struct hostent * hostentry){
+    if (hostentry == NULL){
         perror("gethostbyname");
         exit(1);
     }
 }
 
-/*
-Converts space-delimited IPv4 addresses to dotted-decimal format
 
-Args:
+/*  Handles all client activies
 
-char IPbuffer: space delimited IPv4 address
-*/
-void checkIPbuffer(char *IPbuffer)
-{
-    if (NULL == IPbuffer)
-    {
-        perror("inet_ntoa");
-        exit(1);
-    }
-}
-
-/*
-Handles the client's messages and username settings. Uses the buffers read by the read function to accept a username from
+Handles the client's messages and username settings. Uses the buffers read function to accept a username from
 prompt and resets the user_id value.
 
-Reads the messages and converts given commands into emojis determined by the function replaceWord.
+Reads the messages and converts given commands into emojis determined by the function replace_word.
 Outputs the rewritten message and outputs it to the users
 
 Args:
-
-void arg: client variable to intitalize the client thread
-
+    void arg: client struct containing client information
 */
 void *client_handle(void *arg){
-  char output[BUFFER_SZ];
-   char input[BUFFER_SZ / 2];
-   int rlen;
-   const char *res = NULL;
-   char *str_tokens[100];
-   cli_count++;
-   client_t *cli = (client_t *)arg;
-   char c[100] = "[BEAR]";
-   char d[100] = "ʕ•́ᴥ•̀ʔっ";
-   char* result = NULL;
+    char output[MSG_BUFFER_SZ];
+    char input[MSG_BUFFER_SZ / 2];
+    int rlen;
+    cli_count++;
+    client *cli = (client *)arg;
+    
+    /* Variables for emoji handling */
+    char *str_tokens[100];
+    char emoji_name[100] = "";
+    char emoji[100] = "";
+    char* result = NULL;
+    char msg_copy[1000];		// create copy bc strtok modifies orig str modifies str_tokens
+    
 
-
-   char msg_copy[1000];		// create copy bc strtok modifies orig str
-  		//modifies str_tokens
-
-
-
-  char nick[60];
-  broadcast_self("Set your username\r\n", cli->connect_f);
-
-  while ((rlen = read(cli->connect_f, input, sizeof(input) - 1)) > 0) {
-    input[rlen] = '\0';
+    /* Prompt user for new username and updates name */
+    broadcast_self("Set your username\r\n", cli->connect_f);
+    while ((rlen = read(cli->connect_f, input, sizeof(input) - 1)) > 0) {
+        input[rlen] = '\0';
         output[0] = '\0';
         strip_newline(input);
 
@@ -337,38 +332,35 @@ void *client_handle(void *arg){
             continue;
         }
 
-
-    char *old_name = _strdup(cli->name);
-    strncpy(cli->name, input, sizeof(cli->name));
-    cli->name[sizeof(cli->name)-1] = '\0';
-    sprintf(output, "%s is now known as %s\r\n", old_name, cli->name);
-    free(old_name);
-
-  break;
-}
-
-   broadcast_all(output);
-   while ((rlen = read(cli->connect_f, input, sizeof(input) - 1)) > 0) {
+        /* Update client name */
+        char *old_name = strdup(cli->name);
+        strncpy(cli->name, input, sizeof(cli->name));
+        cli->name[sizeof(cli->name)-1] = '\0';
+        sprintf(output, "%s is now known as %s\r\n", old_name, cli->name);
+        free(old_name);
+        broadcast_all(output);
+        break;
+    }
+    
+    /* Handles messaging (includes emojis parsing) */
+    while ((rlen = read(cli->connect_f, input, sizeof(input) - 1)) > 0) {
         input[rlen] = '\0';
         output[0] = '\0';
         strip_newline(input);
         strcpy(msg_copy, input);
+
         get_tokens(msg_copy, str_tokens);
         for (int i = 0; str_tokens[i][0] != '\0'; i++ ) {
+            //update emoji name
+            strcpy(emoji_name, "[");
+            strcat(emoji_name, str_tokens[i]);
+            strcat(emoji_name, "]");
 
-        //update emoji_text
-        strcpy(c, "[");
-        strcat(c, str_tokens[i]);
-        strcat(c, "]");
-        // printf("c: %s\n", c);
+            // update emoji
+            strcpy(emoji, get_emoji(str_tokens[i]));
 
-        // update emoji
-        strcpy(d, get_emoji(str_tokens[i]));
-        // printf("d: %s\n", d);
-
-        // replace emoji text with emoji
-        strcpy(input, replaceWord(input, c, d));
-
+            // replace emoji text with emoji
+            strcpy(input, replaceWord(input, emoji_name, emoji));
         }
         free(result);
 
@@ -378,30 +370,29 @@ void *client_handle(void *arg){
         }
         else {
             /* Send message */
-
             snprintf(output, sizeof(output), "\n[%s] %s\r\n", cli->name, input);
             send_message(output, cli->user_id);
         }
-      }
+    }
 }
 
-/*
-Catches the signal in the sockets using the listener, Identifies the IP address of the host computer and shows the introduction
+/* Catches the signal in the sockets using the listener. 
+
+Identifies the IP address of the host computer and shows the introduction
 with the IP address. Initializes the client.
 
 Args:
-
-int argc: the number of strings pointed to by argv
-char *argv[]: input of the command
+    int argc: the number of strings pointed to by argv
+    char *argv[]: input of the command
 
 Return:
-0
+    0
 */
 int main(int argc, char *argv[]){
-  int connect_f = 0;
-  struct sockaddr_in cli_addr;
+    int connect_f = 0;
+    struct sockaddr_in cli_addr;
+    pthread_t tid;
 
-  pthread_t tid;
 	if(catch_signal(SIGINT, handle_shutdown) == -1)
 		error("Can't set interrupt handler");
 
@@ -411,48 +402,43 @@ int main(int argc, char *argv[]){
 	if(listen(listener_d, 10) == -1)
 		error("Can't Listen");
 
-	// struct sockaddr_storage client_addr;
 	unsigned int address_size = sizeof(cli_addr);
 
 	puts("Welcome to the Apellatum Messenger.\n");
-  char hostbuffer[256];
+    char hostbuffer[256];
     char *IPbuffer;
     struct hostent *host_entry;
     int hostname;
 
-    // To retrieve hostname
+    // Retrieve hostname
     hostname = gethostname(hostbuffer, sizeof(hostbuffer));
-    checkHostName(hostname);
+    check_host_name(hostname);
 
-    // To retrieve host information
+    // Retrieve host information
     host_entry = gethostbyname(hostbuffer);
-    checkHostEntry(host_entry);
+    check_host_entry(host_entry);
 
-    // To convert an Internet network
-    // address into ASCII string
+    // Convert an Internet network address into ASCII string
     IPbuffer = inet_ntoa(*((struct in_addr*)
                            host_entry->h_addr_list[0]));
-
     printf("Host IP: %s \n", IPbuffer);
 
 	puts("Waiting for connection...");
-	char msg[1000];
-
 	while(1){
-    connect_f = accept(listener_d, (struct sockaddr*)&cli_addr, &address_size);
-	if (connect_f == -1)
-		error("Cannot Open Secondary Socket");
+        connect_f = accept(listener_d, (struct sockaddr*)&cli_addr, &address_size);
+        if (connect_f == -1)
+            error("Cannot Open Secondary Socket");
 
-    client_t *cli = (client_t *)malloc(sizeof(client_t));
-          cli->addr = cli_addr;
-          cli->connect_f = connect_f;
-          cli->user_id = user_id++;
-          sprintf(cli->name, "%d", cli->user_id);
+        client *cli = (client *)malloc(sizeof(client));
+        cli->addr = cli_addr;
+        cli->connect_f = connect_f;
+        cli->user_id = user_id++;
+        sprintf(cli->name, "%d", cli->user_id);
 
-          /* Add client to the queue and fork thread */
-          add_user(cli);
-          pthread_create(&tid, NULL, &client_handle, (void*)cli);
+        /* Add client to the queue*/
+        add_user(cli);
+        pthread_create(&tid, NULL, &client_handle, (void*)cli);
 
-        }
-        return 0;
+    }
+    return 0;
 }
